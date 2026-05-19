@@ -51,7 +51,17 @@ const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 export default function DeckMatch() {
   const [deckFile, setDeckFile] = useState(null);
   const [reqMode, setReqMode] = useState('type'); // 'type' | 'upload'
-  const [reqText, setReqText] = useState('');
+  const [reqText, setReqText] = useState(`1. Core Value Proposition & Mission: The document must articulate a crystal-clear business focus, detailing exactly what problem the organization solves, its overarching mission, and a defined core target milestone (e.g., scale metrics, population reach, or volume of impact).
+
+2. Defined Target Audience & Market Demand: The deck must explicitly outline its target demographic, consumer segments, or corporate end-users. It must provide measurable data indicating strong engagement or high activity levels across its primary audience segments to justify product-market fit.
+
+3. Industry Viability & Market Size: The business must operate within a clearly quantified market space. The document must explicitly state the current total addressable market (TAM) or market size valuation, alongside reliable growth indicators such as a Compounding Annual Growth Rate (CAGR) and long-term future market projections.
+
+4. Clear Delivery Formats & Channels: The business model must show established distribution pipelines, product deliverables, or media/service formats. It must define how it creates and deploys its core offerings—whether through digital platforms, multi-channel ecosystems, or physical distributions.
+
+5. Strategic Partnerships & Integration Network: The organization must show a solid operational infrastructure by highlighting key knowledge partners, brand collaborations, corporate alliances, or government/institutional outreach pipelines that help validate or accelerate its execution.
+
+6. Clear Monetization & Commercialization Strategy: The business must showcase a realistic, structured revenue architecture. It must list distinct commercial real estate or monetization streams—such as programmatic advertising assets, sponsored integrations, long-term commercial contract parameters, product placement properties, or subscription tiers.`);
   const [reqFile, setReqFile] = useState(null);
   
   const [status, setStatus] = useState('idle'); // 'idle' | 'analyzing' | 'results' | 'error'
