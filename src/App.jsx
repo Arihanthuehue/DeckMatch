@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from './utils/supabase';
 
 // --- Helper Functions ---
 const toBase64 = (file) => new Promise((resolve, reject) => {
@@ -74,6 +75,61 @@ export default function DeckMatch() {
   
   const resultsRef = useRef(null);
 
+  const [history, setHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  const fetchHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const { data, error } = await supabase
+        .from('deck_analysis_results')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error("Error fetching history:", error);
+      } else {
+        setHistory(data || []);
+      }
+    } catch (err) {
+      console.error("Exception fetching history:", err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, []);
+
+  const loadHistoryItem = (item) => {
+    // Mock the deck file name so UI displays active state
+    setDeckFile({ name: item.deck_name });
+    
+    // Map feature_cards back to pointers format
+    const pointers = item.feature_cards?.map((fc) => ({
+      title: fc.title,
+      description: fc.body
+    })) || [];
+
+    setDeckData({
+      summary: item.business_summary,
+      pointers: pointers
+    });
+
+    if (item.positive_points && item.positive_points.length > 0) {
+      setCompatData({
+        score: item.compatibility_percentage,
+        matches: item.positive_points,
+        mismatches: item.negative_points
+      });
+    } else {
+      setCompatData(null);
+    }
+
+    setStatus('results');
+  };
+
   // Cycle loading messages
   useEffect(() => {
     let interval;
@@ -146,6 +202,7 @@ export default function DeckMatch() {
 
     setStatus('analyzing');
     setErrorMsg('');
+    let localCompatData = null;
 
     try {
       // --- Call 1: Deck Analysis ---
@@ -226,8 +283,40 @@ export default function DeckMatch() {
         const rawText2 = data2.candidates[0].content.parts[0].text;
         const parsedCompatData = JSON.parse(stripJsonFences(rawText2));
         setCompatData(parsedCompatData);
+        localCompatData = parsedCompatData;
       } else {
         setCompatData(null); // Clear previous comparison if running deck only
+      }
+
+      // --- Save to Supabase DB ---
+      try {
+        const featureCards = parsedDeckData.pointers?.map((pt) => ({
+          title: pt.title,
+          icon: getEmojiForTitle(pt.title),
+          body: pt.description
+        })) || [];
+
+        const insertPayload = {
+          deck_name: deckFile.name,
+          compatibility_percentage: localCompatData ? (localCompatData.score || 0) : 100,
+          business_summary: parsedDeckData.summary || '',
+          positive_points: localCompatData ? (localCompatData.matches || []) : [],
+          negative_points: localCompatData ? (localCompatData.mismatches || []) : [],
+          feature_cards: featureCards
+        };
+
+        const { error: dbError } = await supabase
+          .from('deck_analysis_results')
+          .insert([insertPayload]);
+
+        if (dbError) {
+          console.error("Supabase insert error:", dbError);
+        } else {
+          console.log("Analysis successfully saved to Supabase!");
+          fetchHistory(); // Dynamically reload history listing
+        }
+      } catch (dbErr) {
+        console.error("Database save exception:", dbErr);
       }
 
       setStatus('results');
@@ -395,6 +484,72 @@ export default function DeckMatch() {
             'Analyze & Match'
           )}
         </button>
+
+        {/* Past Matches History Section */}
+        <div className="mt-12 bg-[#1a1a24]/60 border border-[#2a2a3a] rounded-xl p-6 backdrop-blur-md">
+          <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#2a2a3a]">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              📂 Past Matches History
+            </h3>
+            <button 
+              onClick={fetchHistory}
+              className="text-[#f5c518] hover:text-[#ffd633] transition-colors text-sm font-medium flex items-center gap-1 bg-[#f5c518]/10 hover:bg-[#f5c518]/20 px-3 py-1 rounded-full cursor-pointer border-none outline-none"
+            >
+              🔄 Refresh List
+            </button>
+          </div>
+          
+          {loadingHistory ? (
+            <div className="flex justify-center py-6 text-[#8888aa] text-sm items-center">
+              <svg className="animate-spin h-5 w-5 text-[#f5c518] mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Loading past comparisons...
+            </div>
+          ) : history.length === 0 ? (
+            <p className="text-center py-6 text-[#8888aa] text-sm">
+              No past comparisons saved. Run your first match above!
+            </p>
+          ) : (
+            <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4 max-h-[280px] overflow-y-auto pr-2 custom-scrollbar">
+              {history.map((item) => (
+                <div 
+                  key={item.id} 
+                  onClick={() => loadHistoryItem(item)}
+                  className="bg-[#101018] border border-[#2a2a3a] hover:border-[#f5c518]/60 rounded-lg p-4 cursor-pointer hover:shadow-lg transition-all hover:-translate-y-0.5 group flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="text-[#f5c518] text-xs font-bold uppercase tracking-wide">
+                        {new Date(item.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <span 
+                        className="text-xs px-2 py-0.5 rounded-full font-bold"
+                        style={{ 
+                          backgroundColor: `${getScoreColor(item.compatibility_percentage)}22`, 
+                          color: getScoreColor(item.compatibility_percentage) 
+                        }}
+                      >
+                        {item.compatibility_percentage}% Match
+                      </span>
+                    </div>
+                    <h4 className="text-white font-medium text-sm line-clamp-1 group-hover:text-[#f5c518] transition-colors">
+                      {item.deck_name}
+                    </h4>
+                    <p className="text-[#8888aa] text-xs line-clamp-2 mt-1">
+                      {item.business_summary}
+                    </p>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-[11px] text-[#8888aa] group-hover:text-white transition-colors border-t border-[#2a2a3a] pt-2">
+                    <span>{item.feature_cards?.length || 0} features</span>
+                    <span className="font-semibold text-[#f5c518]">Load Run ➔</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </main>
 
       {/* Results Section */}
@@ -494,6 +649,20 @@ export default function DeckMatch() {
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #101018;
+          border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #2a2a3a;
+          border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #f5c518;
         }
       `}} />
     </div>
